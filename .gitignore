@@ -1,0 +1,26 @@
+# build output
+bin/
+obj/
+dist/
+*.pdb
+
+# screenshots, local backups and one-off dev scripts (contain local paths / real screen captures)
+_shots/
+backups/
+tools/
+node_modules/
+
+.vs/
+*.user
+
+# Local diagnostics, credentials and environment settings
+data/
+snapshot.json
+settings.json
+*.log
+.env
+.env.*
+*.pfx
+*.p12
+*.pem
+screenshots/
