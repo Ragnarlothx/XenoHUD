@@ -87,3 +87,28 @@ host.overlay         { corner: tl|tr|bl|br|custom, monitor: primary|cursor, marg
 - Nothing touches Windows settings, wallpaper files or the registry (we only *read* the CPU name from it).
 - Desktop mode is a runtime window re-parent; exit / tray "Restore normal desktop" undoes it.
 - Every settings write backs up the old file to `backups\` (last 30 kept).
+
+## Live Wallpaper (2026-11-26)
+
+UI → host requests:
+
+| type | args | returns |
+|---|---|---|
+| `listMonitors` | — | `[{ index, id: "monitor:N", primary, width, height, x, y, scale }]` (scale in %) |
+| `pickImage` | — | path of a picture chosen in a native dialog, or `null` |
+| `readImage` | `path` | `{ url: "data:image/…;base64,…", bytes }` (PNG/JPEG/WebP/GIF/BMP, max 40 MB) |
+| `wallpaperState` | — | `{ mode, covered, timer, hiddenNow, monitor, sampleMs }` |
+
+Host → UI: `wallpaperState` `{ covered }` whenever a maximized / full-screen window starts or stops hiding the wallpaper,
+and `mode` now also carries `covered`.
+
+Host settings: `host.desktopMonitor` = `primary` | `all` | `monitor:N` (re-attaches when changed while showing).
+`host.wallpaper` = `{ sampleMs: 1000, procSampleMs: 3000, pauseWhenCovered: true, coveredSampleMs: 5000 }`; these replace
+`sampleMs` / `procSampleMs` while the wallpaper is up. While covered the page skips drawing and the matrix rain stops.
+
+UI settings: `ui.wp.*` (see `web/js/wallpaper.js` `defaults`): layout (scale, columns, box size, gap, margins, max width,
+alignment), boxes (background opacity 0 = only text and graphs, color, border, radius, padding, blur, shadow, titles,
+which boxes show), text (size, big-number size, font, weight, color, opacity, shadow), graphs (show, height, thickness,
+fill, color, glow), header (title, machine, clock and its size, top bar, status line), background (theme / color /
+picture with fit, darken and blur; grid), matrix rain (on, opacity, fps, density, character size, color), scanlines,
+vignette, and `preview` to see the look in the normal window while adjusting.

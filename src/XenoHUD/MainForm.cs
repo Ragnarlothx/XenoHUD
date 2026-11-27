@@ -28,6 +28,8 @@ sealed class MainForm : Form
     SensorHub? hub;
     readonly History history = new();
     bool webReady;
+    string? pendingSnapshot;
+    int snapshotQueued;
 
     void OnAlert(object a)
     {
@@ -45,6 +47,7 @@ sealed class MainForm : Form
     public MainForm(string? startMode)
     {
         startModeArg = startMode;
+        coverTimer.Tick += (_, _) => CheckCovered();
         settings.Load();
 
         Text = "XenoHUD";
@@ -115,6 +118,21 @@ sealed class MainForm : Form
         web.CoreWebView2.PostWebMessageAsJson($"{{\"type\":\"{type}\",\"data\":{dataJson}}}");
     }
 
+    void QueueSnapshot(string json)
+    {
+        Interlocked.Exchange(ref pendingSnapshot, json);
+        if (!IsHandleCreated || IsDisposed || Interlocked.Exchange(ref snapshotQueued, 1) != 0) return;
+        try { BeginInvoke(PostLatestSnapshot); }
+        catch (InvalidOperationException) { Interlocked.Exchange(ref snapshotQueued, 0); }
+    }
+
+    void PostLatestSnapshot()
+    {
+        Interlocked.Exchange(ref snapshotQueued, 0);
+        var snapshot = Interlocked.Exchange(ref pendingSnapshot, null);
+        if (snapshot != null && !Disposing && !IsDisposed) PostRaw("snapshot", snapshot);
+    }
+
     object Hello() => new
     {
         app = "XenoHUD",
@@ -179,9 +197,12 @@ sealed class MainForm : Form
                 {
                     if (m["data"] is not JsonObject data) throw new ArgumentException("missing 'data'");
                     bool cpuBefore = settings.Bool("cpuSensors");
+                    var monitorBefore = settings.Str("desktopMonitor", "primary");
                     settings.Save(data);
                     ApplyHostSettings(restartHub: cpuBefore != settings.Bool("cpuSensors"));
                     Post("settings", settings.Root);
+                    // a different wallpaper monitor while the wallpaper is up: re-attach on the new one
+                    if (mode == "desktop" && monitorBefore != settings.Str("desktopMonitor", "primary")) BeginInvoke(() => SetMode("desktop", force: true));
                     return settings.Root;
                 }
 
@@ -200,6 +221,20 @@ sealed class MainForm : Form
             case "openBackups": Process.Start("explorer.exe", Paths.Backups); return null;
 
             case "setMode": SetMode(S("mode")); return mode;
+            case "listMonitors":
+                return Screen.AllScreens.Select((s, i) => new
+                {
+                    index = i, id = "monitor:" + i, primary = s.Primary, width = s.Bounds.Width, height = s.Bounds.Height,
+                    x = s.Bounds.X, y = s.Bounds.Y, scale = Math.Round(Native.MonitorScale(s) * 100),
+                }).ToList();
+            case "readImage": return ReadImage(S("path"));
+            case "wallpaperState":
+                return new { mode, covered, timer = coverTimer.Enabled, hiddenNow = mode == "desktop" && WallpaperHidden(), monitor = wallpaperScreen.DeviceName, sampleMs = hub?.IntervalMs };
+            case "pickImage":
+                {
+                    using var dlg = new OpenFileDialog { Title = "Wallpaper background image", Filter = "Images|*.png;*.jpg;*.jpeg;*.webp;*.gif;*.bmp" };
+                    return dlg.ShowDialog(this) == DialogResult.OK ? dlg.FileName : null;
+                }
             case "setClickThrough": SetClickThrough(m["on"]?.GetValue<bool>() ?? false); return clickThrough;
             case "fitOverlay":
                 {
@@ -313,13 +348,13 @@ sealed class MainForm : Form
         {
             hub?.Dispose();
             hub = new SensorHub(settings.Bool("cpuSensors"), history);
-            hub.Snapshot += json => { try { BeginInvoke(() => PostRaw("snapshot", json)); } catch { } };
+            hub.Snapshot += QueueSnapshot;
             hub.Alerts.Fired += a => { try { BeginInvoke(() => OnAlert(a)); } catch { } };
             hub.Start();
         }
         hub.AlertConfig = settings.Host["alerts"] as JsonObject;
-        hub.IntervalMs = settings.Int("sampleMs", 1000, 250, 10_000);
-        hub.ProcIntervalMs = settings.Int("procSampleMs", 2000, 500, 30_000);
+        ApplyRates();
+        hub.IncludeProcessTitles = mode is "window" or "hud";
 
         var map = new Dictionary<string, string>();
         if (settings.Host["hotkeys"] is JsonObject hk)
@@ -372,7 +407,8 @@ sealed class MainForm : Form
             case "desktop":
                 FormBorderStyle = FormBorderStyle.None;
                 TopMost = false;
-                if (!desktop.Attach(this, settings.Str("desktopMonitor", "primary") == "all"))
+                wallpaperScreen = WallpaperScreen(out var area);
+                if (!desktop.Attach(this, area))
                 {
                     tray.ShowBalloonTip(4000, "XenoHUD", "Couldn't attach to the desktop on this Windows build. Staying in window mode.", ToolTipIcon.Warning);
                     SetMode("window", force: true);
@@ -381,9 +417,134 @@ sealed class MainForm : Form
                 break;
         }
         mode = next;
+        if (hub != null) hub.IncludeProcessTitles = mode is "window" or "hud";
+        covered = false;
+        coverTimer.Enabled = mode == "desktop";
+        ApplyRates();
         Show();
         if (next is "window" or "hud") Activate();
         PostMode();
+        _ = FixPageScale();
+    }
+
+    // ---- Live Wallpaper -----------------------------------------------------
+
+    Screen wallpaperScreen = Screen.PrimaryScreen!;
+    bool covered;
+    readonly System.Windows.Forms.Timer coverTimer = new() { Interval = 1500 };
+
+    double WpNum(string key, double fallback)
+    {
+        try { return settings.Host["wallpaper"]?[key]?.GetValue<double>() ?? fallback; } catch { return fallback; }
+    }
+    bool WpBool(string key, bool fallback)
+    {
+        try { return settings.Host["wallpaper"]?[key]?.GetValue<bool>() ?? fallback; } catch { return fallback; }
+    }
+
+    /// <summary>Which monitor the wallpaper goes on (host.desktopMonitor: primary | all | monitor:N) and the area to cover.</summary>
+    Screen WallpaperScreen(out Rectangle area)
+    {
+        var choice = settings.Str("desktopMonitor", "primary");
+        var screens = Screen.AllScreens;
+        if (choice == "all") { area = SystemInformation.VirtualScreen; return Screen.PrimaryScreen!; }
+        if (choice.StartsWith("monitor:") && int.TryParse(choice[8..], out var i) && i >= 0 && i < screens.Length)
+        { area = screens[i].Bounds; return screens[i]; }
+        area = Screen.PrimaryScreen!.Bounds;
+        return Screen.PrimaryScreen!;
+    }
+
+    /// <summary>Sensor / process intervals for the current mode: the wallpaper has its own (usually slower) rates,
+    /// and drops to a trickle while a maximized or full-screen window hides it.</summary>
+    void ApplyRates()
+    {
+        if (hub == null) return;
+        if (mode == "desktop")
+        {
+            int ms = (int)Math.Clamp(WpNum("sampleMs", 1000), 250, 10_000);
+            int proc = (int)Math.Clamp(WpNum("procSampleMs", 3000), 500, 30_000);
+            if (covered) { ms = (int)Math.Clamp(WpNum("coveredSampleMs", 5000), 1000, 60_000); proc = Math.Max(proc, ms * 3); }
+            hub.IntervalMs = ms; hub.ProcIntervalMs = proc;
+        }
+        else
+        {
+            hub.IntervalMs = settings.Int("sampleMs", 1000, 250, 10_000);
+            hub.ProcIntervalMs = settings.Int("procSampleMs", 2000, 500, 30_000);
+        }
+    }
+
+    /// <summary>True when any visible window is maximized or full screen on the wallpaper's monitor (not just the
+    /// foreground one: clicking the taskbar doesn't make a maximized app stop hiding the wallpaper).</summary>
+    bool WallpaperHidden()
+    {
+        var mon = wallpaperScreen.Bounds;
+        var monName = wallpaperScreen.DeviceName;
+        bool hidden = false;
+        Native.EnumWindows((h, _) =>
+        {
+            if (h == Handle || !Native.IsVisibleWindow(h) || Native.IsIconic(h) || Native.IsCloaked(h) || Native.IsToolWindow(h)) return true;
+            var cls = Native.ClassName(h);
+            if (cls is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "Windows.UI.Core.CoreWindow") return true;
+            if (!Native.GetWindowRect(h, out var r)) return true;
+            var wr = Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom);
+            if (wr.Width <= 0 || wr.Height <= 0 || !wr.IntersectsWith(mon)) return true;
+            bool full = wr.Left <= mon.Left && wr.Top <= mon.Top && wr.Right >= mon.Right && wr.Bottom >= mon.Bottom;
+            bool maxOnMon = Native.IsZoomed(h) && Screen.FromHandle(h).DeviceName == monName;
+            if (full || maxOnMon) { hidden = true; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return hidden;
+    }
+
+    void CheckCovered()
+    {
+        if (mode != "desktop") { coverTimer.Enabled = false; return; }
+        bool now = WpBool("pauseWhenCovered", true) && WallpaperHidden();
+        if (now == covered) return;
+        covered = now;
+        ApplyRates();
+        Post("wallpaperState", new { covered });
+    }
+
+    /// <summary>A local picture as a data: URL for the wallpaper background (the page can't read files itself).</summary>
+    static object ReadImage(string path)
+    {
+        var ext = Path.GetExtension(path ?? "").ToLowerInvariant();
+        var mime = ext switch { ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".webp" => "image/webp", ".gif" => "image/gif", ".bmp" => "image/bmp", _ => null };
+        if (mime == null) throw new ArgumentException("Pick a PNG, JPEG, WebP, GIF or BMP image.");
+        var fi = new FileInfo(path!);
+        if (!fi.Exists) throw new FileNotFoundException("Image not found.", path);
+        if (fi.Length > 40L * 1024 * 1024) throw new ArgumentException("Image is larger than 40 MB.");
+        return new { url = $"data:{mime};base64," + Convert.ToBase64String(File.ReadAllBytes(path!)), bytes = fi.Length };
+    }
+
+    /// <summary>
+    /// In desktop-layer mode the window is a child of Explorer's WorkerW, which spans every monitor. With monitors at
+    /// different scales (100% / 150% / 200%) WebView2 can pick up another monitor's scale, so the page renders 1.5–2× too
+    /// big or small. Measure the page's real pixel ratio and zoom it back to the target monitor's own scale.
+    /// Other modes are normal top-level windows (per-monitor DPI aware) and run at zoom 1.
+    /// </summary>
+    async Task FixPageScale()
+    {
+        if (web.CoreWebView2 == null) return;
+        try
+        {
+            if (mode != "desktop") { if (Math.Abs(web.ZoomFactor - 1) > 0.001) web.ZoomFactor = 1; return; }
+            var screen = wallpaperScreen;   // the monitor the layer was attached to (primary when it spans all)
+            double want = Native.MonitorScale(screen);
+            for (int pass = 0; pass < 2 && mode == "desktop"; pass++)   // re-check once: WebView2 may re-detect scale after the reparent
+            {
+                await Task.Delay(pass == 0 ? 300 : 1500);
+                if (mode != "desktop" || web.CoreWebView2 == null) return;
+                var dprText = await web.CoreWebView2.ExecuteScriptAsync("window.devicePixelRatio");
+                if (mode != "desktop") return;
+                if (!double.TryParse(dprText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var dpr) || dpr <= 0) return;
+                double raster = dpr / web.ZoomFactor;           // devicePixelRatio = rasterization scale × zoom
+                double zoom = Math.Round(want / raster, 3);
+                if (Math.Abs(zoom - web.ZoomFactor) > 0.01) web.ZoomFactor = Math.Clamp(zoom, 0.25, 4);
+            }
+        }
+        catch (Exception ex) { Debug.WriteLine("FixPageScale: " + ex.Message); }
     }
 
     void PostMode() => Post("mode", new
@@ -391,6 +552,7 @@ sealed class MainForm : Form
         mode,
         interactive = mode != "desktop" && !(mode == "overlay" && clickThrough),
         clickThrough = mode == "overlay" && clickThrough,
+        covered = mode == "desktop" && covered,
     });
 
     /// <summary>Size, place and style the compact overlay from host.overlay settings.</summary>
@@ -477,7 +639,7 @@ sealed class MainForm : Form
         menu.Items.Add("HUD (full screen)", null, (_, _) => SetMode("hud"));
         menu.Items.Add("Compact overlay", null, (_, _) => SetMode("overlay"));
         menu.Items.Add("Overlay click-through on/off", null, (_, _) => ToggleClickThrough());
-        menu.Items.Add("Desktop layer", null, (_, _) => SetMode("desktop"));
+        menu.Items.Add("Live Wallpaper", null, (_, _) => SetMode("desktop"));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Restore normal desktop", null, (_, _) => SetMode("window"));
         menu.Items.Add("Open backups folder", null, (_, _) => Process.Start("explorer.exe", Paths.Backups));

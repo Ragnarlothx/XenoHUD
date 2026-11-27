@@ -18,6 +18,7 @@ sealed class SensorHub : IDisposable
 
     public int IntervalMs { get; set; } = 1000;
     public int ProcIntervalMs { get; set; } = 2000;
+    public volatile bool IncludeProcessTitles = true;
 
     public History History { get; }
     public AlertWatcher Alerts { get; } = new();
@@ -387,6 +388,7 @@ sealed class SensorHub : IDisposable
         var seen = new HashSet<int>();
         int threads = 0;
         var gpuByPid = gpuEngines.Sample();
+        var titles = IncludeProcessTitles ? Native.WindowTitlesByPid() : null;
         foreach (var p in Process.GetProcesses())
         {
             using (p)
@@ -416,7 +418,7 @@ sealed class SensorHub : IDisposable
                         gpu = gpuByPid.TryGetValue(p.Id, out var g) ? g : (double?)null,
                         memMB = Math.Round(p.WorkingSet64 / 1048576d, 1),
                         threads = th,
-                        title = string.IsNullOrEmpty(p.MainWindowTitle) ? null : p.MainWindowTitle,
+                        title = titles?.GetValueOrDefault(p.Id),
                     });
                 }
                 catch { }

@@ -1,0 +1,153 @@
+/* The wallpaper is a read-only dashboard inside the desktop window. */
+body.desktop main {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(10px, 1.25vw, 24px);
+  overflow: hidden;
+}
+
+body.desktop #menubar .mright { margin-left: 12px; }
+body.desktop .hero {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  position: relative;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 4px 0 12px;
+  background: transparent;
+  box-shadow: none;
+}
+body.desktop .hero > div:first-child { min-width: 0; }
+body.desktop .hero h1 {
+  margin: 3px 0 5px;
+  font-size: calc(clamp(22px, 2vw, 34px) * var(--fontScale));
+}
+body.desktop .hero-right { min-width: 0; margin: 0; text-align: right; flex: 0 0 auto; }
+body.desktop #machineInfo { margin: 0; overflow-wrap: anywhere; }
+
+body.desktop .widgets {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, clamp(165px, 22vw, 415px)), 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: min(12px, var(--gap));
+}
+body.desktop .widget {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  grid-column: auto;
+}
+body.desktop .widget[hidden], body.desktop #widget-launchers { display: none; }
+body.desktop .widget-head { flex: 0 0 auto; padding: 8px 12px; }
+body.desktop .widget-body { flex: 1 1 auto; min-height: 0; padding: 9px 12px; overflow: hidden; }
+body.desktop .metric { font-size: calc(clamp(20px, 2vw, 34px) * var(--fontScale)); }
+body.desktop .spark { margin-top: 7px; height: clamp(24px, 6vh, 80px); filter: none; }
+body.desktop .row { margin: 7px 0; gap: 7px; min-width: 0; }
+body.desktop .row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.desktop .row > b { flex-shrink: 0; font-weight: 500; white-space: nowrap; }
+body.desktop .sub { margin: 4px 0; }
+body.desktop .wallpaper-rate { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+body.desktop .wallpaper-rate .metric { overflow-wrap: anywhere; font-size: calc(clamp(14px, 1.35vw, 23px) * var(--fontScale)); }
+body.desktop footer { flex: 0 0 auto; margin-top: 10px; }
+body.desktop #rain { opacity: var(--wp-rain-a, .42); }
+
+@media (prefers-reduced-motion: reduce) {
+  #rain { display: none !important; }
+}
+
+@media (max-height: 740px), (max-height: 840px) and (max-width: 850px) {
+  body.desktop .wallpaper-extra { display: none; }
+  body.desktop .widget-head { padding: 6px 9px; }
+  body.desktop .widget-body { padding: 6px 9px; }
+  body.desktop .row { margin: 4px 0; }
+}
+
+@media (max-height: 650px) {
+  body.desktop .hero { margin-bottom: 9px; padding-bottom: 7px; }
+  body.desktop .hero .eyebrow { display: none; }
+  body.desktop #machineInfo { font-size: 11px; }
+  body.desktop .hero-right #bigClock { font-size: 22px; }
+}
+
+/* ===== Live Wallpaper options (js/wallpaper.js sets the --wp-* variables and wp-* classes) =====
+   body.wp        = wallpaper look is active (desktop layer, or "preview in this window")
+   body.wp-layout = desktop layer itself (layout options only apply there) */
+.spark-area { display: none; }
+#wpBackdrop { position: fixed; inset: -40px; display: none; pointer-events: none; background-position: center; background-repeat: no-repeat; background-size: cover; filter: blur(var(--wp-bg-blur, 0)); }
+#wpBackdrop::after { content: ''; position: absolute; inset: 0; background: rgba(0, 0, 0, var(--wp-dim, .35)); }
+body.wp.wp-image #wpBackdrop { display: block; }
+body[data-wp-fit="contain"] #wpBackdrop { background-size: contain; }
+body[data-wp-fit="center"] #wpBackdrop { background-size: auto; }
+body[data-wp-fit="stretch"] #wpBackdrop { background-size: 100% 100%; }
+body[data-wp-fit="tile"] #wpBackdrop { background-size: auto; background-repeat: repeat; }
+
+body.wp { background: var(--wp-bg); }
+body.wp .grid-bg { opacity: var(--wp-grid-a, .13); }
+body.wp.wp-no-grid .grid-bg { display: none !important; }
+body.wp.wp-vignette .vignette { display: block; }
+
+/* boxes */
+body.wp .widget {
+  background: color-mix(in srgb, var(--wp-box) var(--wp-box-a), transparent);
+  border-color: color-mix(in srgb, var(--border, #393b40) var(--wp-border-a), transparent);
+  border-radius: var(--wp-radius);
+  box-shadow: none;
+}
+body.wp .widget-head { background: transparent; border-bottom-color: color-mix(in srgb, var(--border, #393b40) var(--wp-border-a), transparent); }
+body.wp .widget-body { padding: var(--wp-pad); }
+body.wp.wp-shadow .widget { box-shadow: 0 8px 30px rgba(0, 0, 0, .45); }
+body.wp.wp-blur .widget { backdrop-filter: blur(var(--wp-blur)); }
+body.wp.wp-no-titles .widget-head { display: none; }
+
+/* text */
+body.wp main {
+  color: color-mix(in srgb, var(--wp-text-color) calc(var(--wp-text-a) * 100%), transparent);
+  font-weight: var(--wp-weight);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, var(--wp-shadow-a)), 0 0 1px rgba(0, 0, 0, var(--wp-shadow-a));
+}
+body.wp .widget-head, body.wp .widget-body > :not(svg):not(.spark):not(.history-range) { zoom: var(--wp-text); }
+body.wp .metric { zoom: var(--wp-metric); font-weight: var(--wp-weight); }
+body.wp.wp-font-ui main, body.wp.wp-font-ui .metric, body.wp.wp-font-ui .row, body.wp.wp-font-ui .sub, body.wp.wp-font-ui .widget-head { font-family: 'Segoe UI', system-ui, sans-serif; letter-spacing: 0; }
+body.wp.wp-font-cond main, body.wp.wp-font-cond .metric, body.wp.wp-font-cond .row, body.wp.wp-font-cond .sub, body.wp.wp-font-cond .widget-head { font-family: Bahnschrift, 'Segoe UI', sans-serif; letter-spacing: 0; }
+
+/* graphs */
+body.wp .spark { height: var(--wp-graph-h); filter: drop-shadow(0 0 var(--wp-glow) var(--wp-graph)); }
+body.wp .spark polyline { stroke: var(--wp-graph); stroke-width: var(--wp-graph-w); }
+body.wp.wp-fill .spark-area { display: inline; fill: var(--wp-graph); fill-opacity: var(--wp-fill-a); stroke: none; }
+body.wp.wp-no-graphs .spark, body.wp.wp-no-graphs .history-range, body.wp.wp-no-graphs .graph-label { display: none; }
+body.wp-layout .history-range { display: none; }
+
+/* header, top bar, status line */
+body.wp.wp-no-header .hero { display: none !important; }
+body.wp.wp-no-title .hero h1, body.wp.wp-no-title .hero .eyebrow { display: none; }
+body.wp.wp-no-machine #machineInfo { display: none; }
+body.wp.wp-no-clock #bigClock, body.wp.wp-no-clock #uptime { display: none; }
+body.wp #bigClock { font-size: calc(30px * var(--wp-clock)); }
+body.wp-layout.wp-no-menubar #menubar { display: none; }
+body.wp-layout.wp-no-menubar #workspace { height: 100%; }
+body.wp-layout:not(.wp-footer) footer { display: none; }
+
+/* layout: desktop layer only */
+body.wp-layout main {
+  zoom: var(--wp-scale);
+  padding: var(--wp-mt) var(--wp-mr) var(--wp-mb) var(--wp-ml);
+}
+body.wp-layout main > * { width: 100%; max-width: var(--wp-maxw); margin-left: auto; margin-right: auto; box-sizing: border-box; }
+body.wp-layout[data-wp-h="left"] main > * { margin-left: 0; }
+body.wp-layout[data-wp-h="right"] main > * { margin-right: 0; }
+body.wp-layout .widgets { grid-template-columns: var(--wp-cols); grid-auto-rows: var(--wp-h); gap: var(--wp-gap); }
+body.wp-layout:not([data-wp-v="stretch"]) .widgets { flex: 0 0 auto; }
+body.wp-layout:not([data-wp-v="stretch"]):not(.wp-fixed-h) .widgets { grid-auto-rows: auto; }
+body.wp-layout[data-wp-v="center"] main { justify-content: center; }
+body.wp-layout[data-wp-v="bottom"] main { justify-content: flex-end; }
+body.wp-layout.wp-hide-cpu #widget-cpu, body.wp-layout.wp-hide-memory #widget-memory, body.wp-layout.wp-hide-gpu #widget-gpu,
+body.wp-layout.wp-hide-network #widget-network, body.wp-layout.wp-hide-disks #widget-disks, body.wp-layout.wp-hide-processes #widget-processes,
+body.wp-layout.wp-hide-feed #widget-feed, body.wp-layout.wp-hide-sensors #widget-sensors { display: none !important; }
+
+/* settings tab */
+.wp-sec { margin: 18px 0 6px; font: 600 11px var(--mono, Consolas); letter-spacing: 1px; text-transform: uppercase; color: var(--accent); }
+.wp-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }

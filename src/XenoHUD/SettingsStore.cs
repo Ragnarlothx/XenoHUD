@@ -25,7 +25,14 @@ sealed partial class SettingsStore
             ["sampleMs"] = 1000,
             ["procSampleMs"] = 2000,
             ["cpuSensors"] = false,       // opt-in; only works if PawnIO is already installed and app is admin
-            ["desktopMonitor"] = "primary", // primary | all
+            ["desktopMonitor"] = "primary", // primary | all | monitor:N (index from listMonitors)
+            ["wallpaper"] = new JsonObject
+            {
+                ["sampleMs"] = 1000,          // sensor interval while Live Wallpaper is showing
+                ["procSampleMs"] = 3000,      // process list interval while Live Wallpaper is showing
+                ["pauseWhenCovered"] = true,  // slow right down while a maximized / full-screen app hides the wallpaper
+                ["coveredSampleMs"] = 5000,
+            },
             ["topmost"] = false,
             ["frameless"] = true,
             ["overlay"] = new JsonObject

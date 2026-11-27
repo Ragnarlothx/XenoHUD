@@ -38,7 +38,7 @@ sealed class DesktopLayer
         return found;
     }
 
-    public bool Attach(Form form, bool allMonitors)
+    public bool Attach(Form form, Rectangle area)
     {
         if (Attached) return true;
         workerW = FindWorkerW();
@@ -48,7 +48,6 @@ sealed class DesktopLayer
         savedStyle = GetWindowLongPtr(h, GWL_STYLE);
         var style = (savedStyle.ToInt64() & ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME)) | WS_CHILD | WS_VISIBLE;
 
-        var area = allMonitors ? SystemInformation.VirtualScreen : Screen.PrimaryScreen!.Bounds;
         SetParent(h, workerW);
         SetWindowLongPtr(h, GWL_STYLE, new IntPtr(style));
         var pt = new POINT { X = area.Left, Y = area.Top };

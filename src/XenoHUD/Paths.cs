@@ -17,6 +17,7 @@ static class Paths
     /// <summary>web\ next to the exe; in a dev build, walk up to the repo's web\ so edits show up live.</summary>
     public static string FindWeb()
     {
+#if DEBUG
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         for (var d = dir; d != null; d = d.Parent)
         {
@@ -24,6 +25,7 @@ static class Paths
             if (File.Exists(Path.Combine(candidate, "index.html")) && d.GetDirectories("src").Length > 0)
                 return candidate;
         }
+#endif
         return Path.Combine(AppContext.BaseDirectory, "web");
     }
 }
